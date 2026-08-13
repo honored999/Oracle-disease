@@ -4,7 +4,7 @@ This directory contains an isolated reproduction of:
 
 > Singh, A. K. & Koundal, D. (2024). A Temporal Convolutional Network for modeling raw 3D sequences and air-writing recognition. *Decision Analytics Journal*, 10, 100373.
 
-The intended model is a causal, dilated residual Temporal Convolutional Network operating on raw trajectory sequences. Model, preprocessing, training, and evaluation code will be added in later phases.
+The implemented architecture is a causal, dilated residual Temporal Convolutional Network operating on raw trajectory sequences. Preprocessing, training, and evaluation code will be added in later phases.
 
 ## Directory layout
 
@@ -20,11 +20,17 @@ TCN_Singh2024/
 
 ## Installation, data, training, and tests
 
-Commands will be documented once their corresponding implementation phases are complete. Use the `newconda` environment for project commands.
+Model architecture tests can be run with:
+
+```powershell
+conda run -n newconda python -m pytest TCN_Singh2024/tests/test_model.py -v
+```
+
+Training commands will be documented in the training phase. Use the `newconda` environment for project commands.
 
 ## Reproduction status
 
-Repository scaffolding is complete. Architecture reproduction and numerical paper results have not yet been completed.
+Repository scaffolding and architecture implementation are complete. Numerical paper results have not yet been reproduced.
 
 ## Fidelity note
 

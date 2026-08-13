@@ -27,7 +27,16 @@
 
 ## Reproduction assumptions
 
-No implementation assumptions have been selected yet. Later assumptions will be configurable and explicitly recorded here before being described as operational defaults.
+- Default dilation list: `[1, 2, 4]`. This follows the architecture figure rather than resolving the conflicting `2^i, i = 1 ... 8` experiment-text description. The list is configurable in YAML and model construction.
+- Default hidden-channel layout: `[32, 32, 32]`. The paper does not specify filter counts; this is an engineering default, not a paper setting.
+- Default dropout probability: `0.2`. The paper requires dropout in each residual-block main branch but does not state its probability; this is an engineering default, not a paper setting.
+- Causal convolutions use explicit left-only zero padding of `dilation * (kernel_size - 1)` and no right padding. This implementation detail is needed to preserve length and causality but is not fully specified by the paper.
+- Both convolutions in a residual block use that block's single configured dilation. The paper does not give an independent dilation per convolution.
+- The residual addition has no post-add activation. The paper records ReLU after each main-branch convolution but does not explicitly state a post-add activation.
+- All convolutions use PyTorch defaults: `stride=1`, `bias=True`, and PyTorch default parameter initialization. These are framework choices, not paper-specified settings.
+- The implementation adds no normalization, pooling, attention, or Softmax layer. The classifier uses the final temporal feature and returns raw logits.
+- The architecture accepts any positive temporal length. Variable-length batching, padding/masking, and truncation policies are deferred to the preprocessing/data phase; an empty sequence is rejected with `ValueError`.
+- The model configuration is a project-level default for engineering validation only. It is not an RTD, RTC, or 6DMG experiment configuration and must be adapted to verified dataset metadata before a real experiment.
 
 ## Deviations from the paper
 
@@ -35,9 +44,9 @@ None recorded at repository-scaffolding stage.
 
 ## Reproduction status
 
-- [ ] architecture implemented
+- [x] architecture implemented
 - [ ] preprocessing implemented
-- [ ] unit tests passed
+- [x] model architecture unit tests passed
 - [ ] RTD data available
 - [ ] RTC data available
 - [ ] 6DMG data available

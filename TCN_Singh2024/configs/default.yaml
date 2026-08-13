@@ -1,0 +1,7 @@
+model:
+  input_channels: 3
+  hidden_channels: [32, 32, 32]
+  kernel_size: 3
+  dilations: [1, 2, 4]
+  dropout: 0.2
+  num_classes: 10
