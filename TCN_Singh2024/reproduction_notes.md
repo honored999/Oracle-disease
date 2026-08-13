@@ -23,7 +23,7 @@
 - Number of epochs, scheduler, weight decay, early stopping, and random seed are not explicitly specified.
 - Variable-length trajectory handling, including padding and truncation policy, is not specified in enough detail.
 - The paper does not fully specify the complete channel layout for every layer.
-- The sign convention for the root-point translation formula will be recorded alongside the eventual implementation after the paper formula is checked directly.
+- Root-point translation Eq. (2) writes the transformed coordinate with the same symbol as the input, in the direction `x_0 - x_i` (and equivalently for `y` and `z`). The notation is potentially confusing because it does not distinguish the transformed variable with a prime.
 
 ## Reproduction assumptions
 
@@ -37,6 +37,12 @@
 - The implementation adds no normalization, pooling, attention, or Softmax layer. The classifier uses the final temporal feature and returns raw logits.
 - The architecture accepts any positive temporal length. Variable-length batching, padding/masking, and truncation policies are deferred to the preprocessing/data phase; an empty sequence is rejected with `ValueError`.
 - The model configuration is a project-level default for engineering validation only. It is not an RTD, RTC, or 6DMG experiment configuration and must be adapted to verified dataset metadata before a real experiment.
+- Root-point translation defaults to the paper-literal direction: `root - point` (`x_0 - x_i`). An explicit `conventional_relative` mode (`point - root`) is provided only as a named engineering alternative; modes are never mixed within one call.
+- Min-Max normalization is applied independently to every sample and channel across that sample's temporal axis: for `[T, C]`, each channel uses its own `min(sequence[:, c])` and `max(sequence[:, c])`. The paper gives the scalar formula and target range `(0, 1)`, but not this axis choice; it is a reproduction assumption. This per-sample operation avoids using validation/test samples or cross-sample statistics.
+- A constant per-sample channel is mapped to zero using a safe denominator, so normalization never produces NaN or Inf. The paper does not specify constant-channel behavior.
+- Each Dataset sample remains an unpadded `[T, C]` tensor with integer label. The batch collate function right-pads time only, returns model-ready `sequences: [B, C, T_max]`, `lengths: [B]`, and `labels: [B]`. This variable-length batching policy is a reproduction assumption; the paper does not specify it.
+- When `lengths` are supplied to the classifier, it selects feature index `lengths[b] - 1` for each sample instead of the shared padded end. This minimal model extension prevents padding from replacing a sample's real final time step and preserves the prior behavior when `lengths=None`.
+- No RTD, RTC, or 6DMG file-format parser is implemented because no local data or verified format specification is available. The Dataset is an in-memory adapter for the internal `(sequence [T, C], label int)` contract.
 
 ## Deviations from the paper
 
@@ -45,8 +51,9 @@ None recorded at repository-scaffolding stage.
 ## Reproduction status
 
 - [x] architecture implemented
-- [ ] preprocessing implemented
+- [x] preprocessing implemented
 - [x] model architecture unit tests passed
+- [x] preprocessing and dataset-interface unit tests passed
 - [ ] RTD data available
 - [ ] RTC data available
 - [ ] 6DMG data available

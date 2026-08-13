@@ -20,3 +20,13 @@ label: int
 ```
 
 For raw 3D trajectories, `C = 3` represents `(x, y, z)`. The model interface will remain configurable for future inputs where `C > 3`.
+
+The current implementation provides only an in-memory Dataset and a batch collate interface; it does not infer or claim an official RTD, RTC, or 6DMG file format. Dataset samples remain unpadded as `sequence [T, C]`. The collate function right-pads time within a batch and returns:
+
+```text
+sequences: [B, C, T_max]
+lengths: [B]
+labels: [B]
+```
+
+Pass `lengths` to the classifier so its last-step head selects each sample's real final temporal feature rather than a padding position.

@@ -116,6 +116,15 @@ class TCNClassifier(nn.Module):
             features = block(features)
         return features
 
-    def forward(self, inputs: Tensor) -> Tensor:
+    def forward(self, inputs: Tensor, lengths: Tensor | None = None) -> Tensor:
         temporal_features = self.forward_features(inputs)
-        return self.classifier(temporal_features[:, :, -1])
+        if lengths is None:
+            last_features = temporal_features[:, :, -1]
+        else:
+            if lengths.ndim != 1 or lengths.shape[0] != inputs.shape[0]:
+                raise ValueError("lengths must have shape [B]")
+            if not torch.all((lengths >= 1) & (lengths <= inputs.shape[2])):
+                raise ValueError("lengths must be within the temporal input range")
+            indices = lengths.to(device=inputs.device, dtype=torch.long) - 1
+            last_features = temporal_features[torch.arange(inputs.shape[0], device=inputs.device), :, indices]
+        return self.classifier(last_features)
