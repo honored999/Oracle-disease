@@ -33,7 +33,15 @@ conda run -n newconda python -m pytest TCN_Singh2024/tests/test_preprocess.py -v
 conda run -n newconda python -m pytest TCN_Singh2024/tests/test_dataset.py -v
 ```
 
-Training commands will be documented in the training phase. Use the `newconda` environment for project commands.
+The training and evaluation library accepts verified Dataset objects through `train_one_epoch`, `evaluate`, and `run_cross_validation`. It uses logits with `CrossEntropyLoss`, Adam defaults of `lr=0.001` and batch size `32`, and sample-level 10-fold CV by default. This sample-level split is not subject-independent evaluation.
+
+An engineering-only synthetic smoke run is available:
+
+```powershell
+conda run -n newconda python -m TCN_Singh2024.src.train --config TCN_Singh2024/configs/default.yaml --synthetic-smoke --output-dir $env:TEMP\tcn-smoke
+```
+
+Synthetic smoke metrics are not paper reproduction results. Architecture and training pipeline are validated with synthetic data; numerical paper results are not yet reproduced. Use the `newconda` environment for project commands.
 
 ## Reproduction status
 

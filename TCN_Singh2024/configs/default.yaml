@@ -5,3 +5,17 @@ model:
   dilations: [1, 2, 4]
   dropout: 0.2
   num_classes: 10
+
+training:
+  batch_size: 32
+  learning_rate: 0.001
+  optimizer: adam
+  epochs: 20
+  seed: 42
+  num_workers: 0
+  shuffle_train: true
+  drop_last: false
+
+evaluation:
+  folds: 10
+  split_type: sample_level_kfold

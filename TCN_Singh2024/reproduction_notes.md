@@ -43,6 +43,11 @@
 - Each Dataset sample remains an unpadded `[T, C]` tensor with integer label. The batch collate function right-pads time only, returns model-ready `sequences: [B, C, T_max]`, `lengths: [B]`, and `labels: [B]`. This variable-length batching policy is a reproduction assumption; the paper does not specify it.
 - When `lengths` are supplied to the classifier, it selects feature index `lengths[b] - 1` for each sample instead of the shared padded end. This minimal model extension prevents padding from replacing a sample's real final time step and preserves the prior behavior when `lengths=None`.
 - No RTD, RTC, or 6DMG file-format parser is implemented because no local data or verified format specification is available. The Dataset is an in-memory adapter for the internal `(sequence [T, C], label int)` contract.
+- Default training configuration preserves the paper-specified Adam optimizer, initial learning rate `0.001`, batch size `32`, and 10 folds. The default `num_classes=10` is only an RTD-oriented placeholder and must be changed to verified dataset metadata before a real experiment.
+- Epochs (`20`), random seed (`42`), DataLoader shuffle, worker count, drop-last behavior, device choice, CrossEntropyLoss, no gradient clipping, no scheduler, no weight decay, no early stopping, and no checkpoint-selection policy are reproduction assumptions or explicit omissions; they are configuration-controlled where applicable.
+- Cross-validation uses reproducible shuffled, non-stratified, sample-level KFold with fold seed `seed + fold`. It is not subject-independent evaluation and must not be described as such without verified subject IDs and a grouped split.
+- Fold-level validation accuracy is aggregated as arithmetic mean and population standard deviation. Accuracy is the paper-reported main metric; loss, confusion matrix, per-class accuracy, standard deviation, and metrics JSON are engineering supplements. Per-class accuracy is `null` when a class has no validation examples in a fold.
+- Training and evaluation pass batch `lengths` to the classifier. Synthetic smoke runs use a two-class, ten-sample, one-epoch CPU dataset solely to validate orchestration; their metrics are not RTD, RTC, 6DMG, or paper reproduction results.
 
 ## Deviations from the paper
 
@@ -54,6 +59,7 @@ None recorded at repository-scaffolding stage.
 - [x] preprocessing implemented
 - [x] model architecture unit tests passed
 - [x] preprocessing and dataset-interface unit tests passed
+- [x] training, evaluation, and sample-level CV pipeline validated on synthetic data
 - [ ] RTD data available
 - [ ] RTC data available
 - [ ] 6DMG data available
