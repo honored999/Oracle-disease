@@ -1,0 +1,36 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and local configuration
+.venv/
+venv/
+env/
+.env
+
+# IDE and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Data, checkpoints, and generated experiment artifacts
+TCN_Singh2024/data/RTD/**
+TCN_Singh2024/data/RTC/**
+TCN_Singh2024/data/6DMG/**
+TCN_Singh2024/data/mandibular/**
+TCN_Singh2024/results/**
+!TCN_Singh2024/data/README.md
+!TCN_Singh2024/results/README.md
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.npy
+*.npz
