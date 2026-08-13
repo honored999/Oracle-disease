@@ -42,7 +42,13 @@
 - A constant per-sample channel is mapped to zero using a safe denominator, so normalization never produces NaN or Inf. The paper does not specify constant-channel behavior.
 - Each Dataset sample remains an unpadded `[T, C]` tensor with integer label. The batch collate function right-pads time only, returns model-ready `sequences: [B, C, T_max]`, `lengths: [B]`, and `labels: [B]`. This variable-length batching policy is a reproduction assumption; the paper does not specify it.
 - When `lengths` are supplied to the classifier, it selects feature index `lengths[b] - 1` for each sample instead of the shared padded end. This minimal model extension prevents padding from replacing a sample's real final time step and preserves the prior behavior when `lengths=None`.
-- No RTD, RTC, or 6DMG file-format parser is implemented because no local data or verified format specification is available. The Dataset is an in-memory adapter for the internal `(sequence [T, C], label int)` contract.
+- RTD adapter implementation: provisional; real-file validation: pending. It follows the author page's `features`/`labels` pickle description, flat XYZ sequence order, and one-hot labels, but exact pickle containers, label vocabulary, metadata, and values are unverified until actual files are inspected.
+- RTC adapter implementation: provisional; real-file validation: pending. It follows the same author-documented pickle contract, but RTC character case and index-to-character mapping remain unknown until the real label file and any vocabulary metadata are inspected.
+- 6DMG adapter implementation: provisional; real-file validation: pending. It follows the documented SQLite record layout and defaults to `position_xyz` only. Singh & Koundal describe raw 3D trajectories while noting that 6DMG also has inertial fields; choosing position XYZ is the current evidence-bounded reproduction assumption, not a claimed explicit column list from their paper.
+- The Phase 5A 6DMG adapter assumes an unverified SQLite table with `name`, `tester`, `trial`, `length`, and raw `data` BLOB columns; a little-endian 14-float32 record (`timestamp`, position XYZ, quaternion WXYZ, acceleration XYZ, angular-speed XYZ); and position at record offsets 1-3. These serialization details are provisional loader/database assumptions awaiting Phase 5B real-file and official-loader validation.
+- `position_xyz` is the only implemented Phase 5A feature selection. The parameter is explicit so a future verified selection can be added, but quaternion, acceleration, and angular speed are intentionally unsupported until evidence establishes their intended use.
+- Adapters apply Phase 3 preprocessing in the order root-point translation then per-sample/per-channel Min-Max normalization. The paper specifies both transforms but does not explicitly specify their strict order; this order is a reproduction assumption. Root translation alone sets the first point to zero; subsequent Min-Max normalization can shift that value.
+- Real dataset audit, real sample statistics, real subject/writer metadata, RTD/RTC label vocabulary, 6DMG table/version, and dataset-specific field validation all remain pending Phase 5B. No real data result or paper experiment is claimed.
 - Default training configuration preserves the paper-specified Adam optimizer, initial learning rate `0.001`, batch size `32`, and 10 folds. The default `num_classes=10` is only an RTD-oriented placeholder and must be changed to verified dataset metadata before a real experiment.
 - Epochs (`20`), random seed (`42`), DataLoader shuffle, worker count, drop-last behavior, device choice, CrossEntropyLoss, no gradient clipping, no scheduler, no weight decay, no early stopping, and no checkpoint-selection policy are reproduction assumptions or explicit omissions; they are configuration-controlled where applicable.
 - Cross-validation uses reproducible shuffled, non-stratified, sample-level KFold with fold seed `seed + fold`. It is not subject-independent evaluation and must not be described as such without verified subject IDs and a grouped split.
@@ -60,6 +66,9 @@ None recorded at repository-scaffolding stage.
 - [x] model architecture unit tests passed
 - [x] preprocessing and dataset-interface unit tests passed
 - [x] training, evaluation, and sample-level CV pipeline validated on synthetic data
+- [ ] RTD adapter real-file validated (provisional implementation exists)
+- [ ] RTC adapter real-file validated (provisional implementation exists)
+- [ ] 6DMG adapter real-file validated (provisional implementation exists)
 - [ ] RTD data available
 - [ ] RTC data available
 - [ ] 6DMG data available

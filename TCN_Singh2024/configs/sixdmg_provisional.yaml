@@ -1,0 +1,6 @@
+data:
+  root: data/6DMG
+  database_file: air_handwriting.sqlite
+  table_name: samples
+  feature_selection: position_xyz
+  label_mapping: {}

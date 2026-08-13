@@ -21,12 +21,12 @@ env/
 Thumbs.db
 
 # Data, checkpoints, and generated experiment artifacts
-TCN_Singh2024/data/RTD/**
-TCN_Singh2024/data/RTC/**
-TCN_Singh2024/data/6DMG/**
-TCN_Singh2024/data/mandibular/**
+data/RTD/**
+data/RTC/**
+data/6DMG/**
+data/mandibular/**
+!data/README.md
 TCN_Singh2024/results/**
-!TCN_Singh2024/data/README.md
 !TCN_Singh2024/results/README.md
 *.pt
 *.pth

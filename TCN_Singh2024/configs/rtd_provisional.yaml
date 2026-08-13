@@ -1,0 +1,4 @@
+data:
+  root: data/RTD
+  features_file: features
+  labels_file: labels

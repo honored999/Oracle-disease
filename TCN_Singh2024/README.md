@@ -43,6 +43,10 @@ conda run -n newconda python -m TCN_Singh2024.src.train --config TCN_Singh2024/c
 
 Synthetic smoke metrics are not paper reproduction results. Architecture and training pipeline are validated with synthetic data; numerical paper results are not yet reproduced. Use the `newconda` environment for project commands.
 
+## Dataset adapters
+
+Provisional RTD, RTC, and 6DMG adapters are available for the documented source formats, but none has been validated against real downloaded files. They read only repository-root paths such as `data/RTD/`, never `TCN_Singh2024/data/`. See the root [`data/README.md`](../data/README.md) before using them.
+
 ## Reproduction status
 
 Repository scaffolding and architecture implementation are complete. Numerical paper results have not yet been reproduced.
