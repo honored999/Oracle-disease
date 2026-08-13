@@ -34,3 +34,6 @@ TCN_Singh2024/results/**
 *.onnx
 *.npy
 *.npz
+
+# Local reference papers
+**/references/*.pdf
