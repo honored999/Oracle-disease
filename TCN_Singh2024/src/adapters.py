@@ -10,6 +10,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -172,5 +173,130 @@ def load_sixdmg_sqlite_dataset(
             "sequence": _apply_preprocessing(sequence, preprocess),
             "label": int(label_mapping[name]),
             "metadata": {"name": name, "tester": tester, "trial": trial, "source_index": index, **metadata_row},
+        })
+    return ProvisionalTrajectoryDataset(samples)
+
+
+RtcSplit = Literal["main", "test"]
+_RTC_PICKLE_GLOBALS = {
+    ("numpy.core.multiarray", "_reconstruct"): np._core.multiarray._reconstruct,
+    ("numpy._core.multiarray", "_reconstruct"): np._core.multiarray._reconstruct,
+    ("numpy", "ndarray"): np.ndarray,
+    ("numpy", "dtype"): np.dtype,
+}
+
+
+class _RtcNumpyArrayUnpickler(pickle.Unpickler):
+    """Restrict RTC pickle reconstruction to NumPy array primitives."""
+
+    def find_class(self, module: str, name: str) -> object:
+        try:
+            return _RTC_PICKLE_GLOBALS[(module, name)]
+        except KeyError as error:
+            raise pickle.UnpicklingError(
+                f"RTC adapter rejected pickle global {module}.{name}"
+            ) from error
+
+
+def _load_rtc_numpy_array(path: str | Path, field_name: str) -> np.ndarray:
+    """Load one explicitly supplied RTC pickle as a finite 2-D NumPy array."""
+    try:
+        with Path(path).open("rb") as stream:
+            value = _RtcNumpyArrayUnpickler(stream).load()
+    except (OSError, EOFError, pickle.UnpicklingError, ValueError, TypeError) as error:
+        raise ValueError(f"RTC adapter: unable to load {field_name} NumPy array from {path}") from error
+
+    if not isinstance(value, np.ndarray) or value.ndim != 2:
+        raise ValueError(f"RTC adapter: {field_name} must be a 2-D NumPy array")
+    if not np.issubdtype(value.dtype, np.number) or np.issubdtype(value.dtype, np.complexfloating):
+        raise ValueError(f"RTC adapter: {field_name} must have a real numeric dtype")
+    if not np.isfinite(value).all():
+        raise ValueError(f"RTC adapter: {field_name} contains NaN or Inf")
+    return value
+
+
+def _validate_rtc_source_paths(
+    features_path: str | Path,
+    labels_path: str | Path,
+    split: RtcSplit | None,
+) -> RtcSplit | None:
+    """Validate explicit RTC paths without discovering or merging another split."""
+    feature_path = Path(features_path)
+    label_path = Path(labels_path)
+    for path in (feature_path, label_path):
+        parts = {part.casefold() for part in path.parts}
+        if "rtd" in parts and "raw" in parts:
+            raise ValueError("RTC adapter refuses RTD raw paths; pass data/RTC/raw files")
+
+    known_pairs = {
+        ("features", "labels"): "main",
+        ("featurestest", "labelstest"): "test",
+    }
+    pair = (feature_path.name.casefold(), label_path.name.casefold())
+    inferred_split = known_pairs.get(pair)
+    if pair[0] in {"features", "featurestest"} or pair[1] in {"labels", "labelstest"}:
+        if inferred_split is None:
+            raise ValueError("RTC adapter requires matching features/labels or featuresTest/labelsTest paths")
+    if split is not None and split not in {"main", "test"}:
+        raise ValueError("RTC adapter split must be 'main' or 'test'")
+    if split is not None and inferred_split is not None and split != inferred_split:
+        raise ValueError(f"RTC adapter paths belong to the {inferred_split!r} split, not {split!r}")
+    return split or inferred_split
+
+
+def _rtc_trim_trailing_scalar_zeros(row: np.ndarray, index: int) -> np.ndarray:
+    """Return a non-empty row prefix without removing any interior zero."""
+    nonzero_positions = np.flatnonzero(row != 0)
+    if nonzero_positions.size == 0:
+        raise ValueError(f"RTC adapter: feature {index} is an empty all-zero sequence")
+    valid_length = int(nonzero_positions[-1]) + 1
+    if not np.all(row[valid_length:] == 0):
+        raise ValueError(f"RTC adapter: feature {index} has non-contiguous trailing padding")
+    if valid_length % 3 != 0:
+        raise ValueError(f"RTC adapter: feature {index} valid length must be divisible by 3")
+    return row[:valid_length]
+
+
+def _rtc_one_hot_to_label(row: np.ndarray, index: int) -> int:
+    if row.ndim != 1 or row.shape[0] != 26:
+        raise ValueError(f"RTC adapter: label {index} must have shape (26,) one-hot encoding")
+    active = np.flatnonzero(row == 1)
+    if not np.isin(row, (0, 1)).all() or active.size != 1 or row.sum() != 1:
+        raise ValueError(f"RTC adapter: label {index} is not strict one-hot")
+    return int(active[0])
+
+
+def load_rtc_pickle_dataset(
+    features_path: str | Path,
+    labels_path: str | Path,
+    preprocess: bool = True,
+    split: RtcSplit | None = None,
+) -> ProvisionalTrajectoryDataset:
+    """Load one explicitly supplied RTC main or test pickle pair.
+
+    The verified RTC files use a fixed-width row with zero padding.  This
+    adapter removes only the contiguous scalar zero suffix from each row and
+    reshapes the remaining interleaved XYZ prefix to [T, 3].  It never
+    discovers, reads, or combines the other split.  Callers should pass paths
+    resolved from the repository root, for example data/RTC/raw/features.
+    """
+    resolved_split = _validate_rtc_source_paths(features_path, labels_path, split)
+    features = _load_rtc_numpy_array(features_path, "features")
+    labels = _load_rtc_numpy_array(labels_path, "labels")
+    if features.shape[0] != labels.shape[0]:
+        raise ValueError("RTC adapter: features and labels have different sample counts")
+    if features.shape[1] < 3:
+        raise ValueError("RTC adapter: features must contain at least one XYZ triplet")
+    if labels.shape[1] != 26:
+        raise ValueError("RTC adapter: labels must have 26 one-hot classes")
+
+    samples: list[dict[str, object]] = []
+    for index, (row, label_row) in enumerate(zip(features, labels, strict=True)):
+        valid_values = _rtc_trim_trailing_scalar_zeros(row, index)
+        sequence = torch.tensor(valid_values, dtype=torch.float32).reshape(-1, 3)
+        samples.append({
+            "sequence": _apply_preprocessing(sequence, preprocess),
+            "label": _rtc_one_hot_to_label(label_row, index),
+            "metadata": {"source_index": index, **({"split": resolved_split} if resolved_split else {})},
         })
     return ProvisionalTrajectoryDataset(samples)

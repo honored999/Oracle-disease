@@ -43,12 +43,12 @@
 - Each Dataset sample remains an unpadded `[T, C]` tensor with integer label. The batch collate function right-pads time only, returns model-ready `sequences: [B, C, T_max]`, `lengths: [B]`, and `labels: [B]`. This variable-length batching policy is a reproduction assumption; the paper does not specify it.
 - When `lengths` are supplied to the classifier, it selects feature index `lengths[b] - 1` for each sample instead of the shared padded end. This minimal model extension prevents padding from replacing a sample's real final time step and preserves the prior behavior when `lengths=None`.
 - RTD adapter implementation: provisional; real-file validation: pending. It follows the author page's `features`/`labels` pickle description, flat XYZ sequence order, and one-hot labels, but exact pickle containers, label vocabulary, metadata, and values are unverified until actual files are inspected.
-- RTC adapter implementation: provisional; real-file validation: pending. It follows the same author-documented pickle contract, but RTC character case and index-to-character mapping remain unknown until the real label file and any vocabulary metadata are inspected.
+- RTC adapter implementation: the real-file parsing and representation behavior described in the RTC validation findings below is validated. This validation does not establish a numerical paper reproduction or an RTC experiment-pool choice.
 - 6DMG adapter implementation: provisional; real-file validation: pending. It follows the documented SQLite record layout and defaults to `position_xyz` only. Singh & Koundal describe raw 3D trajectories while noting that 6DMG also has inertial fields; choosing position XYZ is the current evidence-bounded reproduction assumption, not a claimed explicit column list from their paper.
 - The Phase 5A 6DMG adapter assumes an unverified SQLite table with `name`, `tester`, `trial`, `length`, and raw `data` BLOB columns; a little-endian 14-float32 record (`timestamp`, position XYZ, quaternion WXYZ, acceleration XYZ, angular-speed XYZ); and position at record offsets 1-3. These serialization details are provisional loader/database assumptions awaiting Phase 5B real-file and official-loader validation.
 - `position_xyz` is the only implemented Phase 5A feature selection. The parameter is explicit so a future verified selection can be added, but quaternion, acceleration, and angular speed are intentionally unsupported until evidence establishes their intended use.
 - Adapters apply Phase 3 preprocessing in the order root-point translation then per-sample/per-channel Min-Max normalization. The paper specifies both transforms but does not explicitly specify their strict order; this order is a reproduction assumption. Root translation alone sets the first point to zero; subsequent Min-Max normalization can shift that value.
-- Real dataset audit, real sample statistics, real subject/writer metadata, RTD/RTC label vocabulary, 6DMG table/version, and dataset-specific field validation all remain pending Phase 5B. No real data result or paper experiment is claimed.
+- RTD and 6DMG real-file validation, real subject/writer metadata, 6DMG table/version, and dataset-specific field validation outside the RTC findings below remain pending. RTC parsing and real-data TCN forward compatibility are validated, but no real-data numerical result or paper experiment is claimed.
 - Default training configuration preserves the paper-specified Adam optimizer, initial learning rate `0.001`, batch size `32`, and 10 folds. The default `num_classes=10` is only an RTD-oriented placeholder and must be changed to verified dataset metadata before a real experiment.
 - Epochs (`20`), random seed (`42`), DataLoader shuffle, worker count, drop-last behavior, device choice, CrossEntropyLoss, no gradient clipping, no scheduler, no weight decay, no early stopping, and no checkpoint-selection policy are reproduction assumptions or explicit omissions; they are configuration-controlled where applicable.
 - Cross-validation uses reproducible shuffled, non-stratified, sample-level KFold with fold seed `seed + fold`. It is not subject-independent evaluation and must not be described as such without verified subject IDs and a grouped split.
@@ -67,11 +67,121 @@ None recorded at repository-scaffolding stage.
 - [x] preprocessing and dataset-interface unit tests passed
 - [x] training, evaluation, and sample-level CV pipeline validated on synthetic data
 - [ ] RTD adapter real-file validated (provisional implementation exists)
-- [ ] RTC adapter real-file validated (provisional implementation exists)
+- [x] RTC adapter real-file validated for parsing/representation and TCN forward compatibility; this is not numerical reproduction
 - [ ] 6DMG adapter real-file validated (provisional implementation exists)
 - [ ] RTD data available
-- [ ] RTC data available
+- [x] RTC data available
 - [ ] 6DMG data available
 - [ ] RTD experiment reproduced
 - [ ] RTC experiment reproduced
 - [ ] 6DMG experiment reproduced
+
+## Real dataset validation status
+
+### RTD
+
+- Status: `BLOCKED` by official dataset-format ambiguity.
+- Official source identified: yes
+- Official files downloaded: not resolved in this phase
+- Expected local location: `data/RTD/raw/`
+- Raw-file audit: blocked by the official dataset-format ambiguity
+- Adapter implementation: provisional / pending
+- Real-file adapter validation: pending
+- Sample statistics verified: no
+- Paper 10-fold data usage confirmed: no
+- Paper numerical experiment reproduced: no
+
+Official files may include:
+
+- `features`
+- `featuresTest`
+- `labels`
+- `labelsTest`
+
+The existence of an official test split does not establish whether Singh &
+Koundal used only the main set, only a predefined split, or a merged dataset
+for their reported 10-fold cross-validation. This remains unresolved until
+supported by primary-source evidence.
+
+### RTC
+
+- Status: `VERIFIED` for real-data parsing/representation and TCN forward compatibility.
+- Official source identified: yes
+- Official files: available under `data/RTC/raw/`
+- Expected local location: `data/RTC/raw/`
+- Raw-file audit: verified for the facts listed below
+- Adapter implementation: validated for the verified real-file representation
+- Real-file adapter validation: verified for parsing/representation and TCN forward compatibility
+- Sample statistics verified: shape and empty-sample findings below; no class-frequency table is claimed here
+- Paper numerical experiment reproduced: no
+
+Verified RTC facts:
+
+- Main: `features` shape `(20098, 800)`; `labels` shape `(20098, 26)`.
+- Test: `featuresTest` shape `(5552, 800)`; `labelsTest` shape `(5552, 26)`.
+- Both label arrays are strict one-hot encodings for 26 classes.
+- Main contains 2 all-zero empty feature samples.
+- Non-empty trajectories are recoverable variable-length interleaved XYZ
+  sequences. Only continuous trailing-zero padding is removed; the valid
+  non-empty scalar length must be divisible by 3, then the values are reshaped
+  to `[T, 3]`.
+- Main and Test remain separate; the adapter does not automatically merge
+  them. `source_index` and split metadata are preserved.
+- The adapter reuses the existing preprocessing: paper-literal root
+  translation followed by per-sample/per-channel Min-Max normalization.
+- The adapter rejects empty sequences, NaN/Inf, malformed shapes or counts,
+  and invalid one-hot labels.
+
+The current adapter intentionally rejects the 2 empty Main sequences. Future
+training must explicitly decide and document their handling; this validation
+does not prescribe dropping them.
+
+The official files contain `20098 + 5552 = 25650` samples. Public descriptions
+may report approximately 30,000 samples; this dataset-release/count discrepancy
+is unresolved pending authoritative evidence, with no explanation asserted
+here.
+
+Singh & Koundal's exact RTC experiment pool remains unresolved. This phase does
+not claim main-only, Test-only, merged, or predefined-split usage. Any future
+selection must be labeled as paper-specified or as a reproduction
+assumption/best-supported choice.
+
+Formal RTC training and 10-fold CV have not started. Singh's reported RTC
+accuracy has not been reproduced.
+
+### 6DMG
+
+- Official source identified: yes
+- Official files downloaded: pending
+- Expected local location: `data/6DMG/raw/`
+- Raw-file audit: pending
+- Adapter implementation: provisional / pending
+- Sample statistics verified: no
+- Exact Singh & Koundal input-field selection confirmed: no
+- Paper numerical experiment reproduced: no
+
+The paper describes use of raw 3D trajectories. Position `[x, y, z]` is
+currently the best-supported candidate input for 6DMG, but the exact field
+selection has not yet been established as an explicit paper-specified fact.
+
+## Deliberate validation findings
+
+The RTC observations above are validation findings about the verified real
+files and current adapter behavior. They are not additional paper-specified
+training settings. In particular, this phase deliberately stops at real-data
+parsing and forward compatibility; it does not select an RTC experiment pool,
+start formal training, run 10-fold CV, or report a reproduced accuracy.
+
+## Unresolved issues
+
+1. Main contains 2 all-zero empty feature samples, and the current adapter
+   intentionally rejects empty sequences. Future training must explicitly
+   decide and document their handling; no dropping policy is selected here.
+2. The official files contain 25,650 samples in total, while public
+   descriptions may report approximately 30,000. The dataset-release/count
+   discrepancy remains unresolved pending authoritative evidence.
+3. Singh & Koundal's exact RTC experiment pool remains unresolved. Main-only,
+   Test-only, merged, and predefined-split usage are not claimed. Future
+   selection must be labeled paper-specified or a reproduction
+   assumption/best-supported choice.
+4. RTD remains `BLOCKED` by official dataset-format ambiguity.
