@@ -2,6 +2,12 @@
 
 ## Paper-specified settings
 
+The retained bullets in this section record paper and architecture context.
+For the approved RTC reproduction protocol, only the six Singh & Koundal
+settings listed under `Approved RTC protocol decision` below are classified as
+paper-specified. In particular, the paper does not specify the exact RTC
+cross-validation pool, empty-sample handling, or Main/Test treatment.
+
 - Task: air-writing classification from raw 3D trajectory sequences.
 - Raw trajectory coordinates: `(x, y, z)`.
 - Preprocessing: root-point translation and Min-Max normalization.
@@ -132,22 +138,91 @@ Verified RTC facts:
 - The adapter rejects empty sequences, NaN/Inf, malformed shapes or counts,
   and invalid one-hot labels.
 
-The current adapter intentionally rejects the 2 empty Main sequences. Future
-training must explicitly decide and document their handling; this validation
-does not prescribe dropping them.
+The current adapter intentionally rejects the 2 empty Main sequences. The
+approved reproduction protocol excludes these two rows before fold
+construction as an explicit reproduction assumption; the raw files remain
+unchanged.
 
 The official files contain `20098 + 5552 = 25650` samples. Public descriptions
 may report approximately 30,000 samples; this dataset-release/count discrepancy
 is unresolved pending authoritative evidence, with no explanation asserted
 here.
 
-Singh & Koundal's exact RTC experiment pool remains unresolved. This phase does
-not claim main-only, Test-only, merged, or predefined-split usage. Any future
-selection must be labeled as paper-specified or as a reproduction
-assumption/best-supported choice.
+Singh & Koundal's exact RTC experiment pool remains unresolved. Because the
+paper does not explicitly specify the exact RTC cross-validation pool, this
+reproduction adopts the official Main split as the CV pool. This Main-only
+choice, the exclusion of the two all-zero rows, the independent Test handling,
+and the resulting pool size are approved reproduction assumptions rather than
+explicit Singh settings. Test remains separate and is not merged into CV.
 
 Formal RTC training and 10-fold CV have not started. Singh's reported RTC
 accuracy has not been reproduced.
+
+### Approved RTC protocol decision
+
+#### Singh paper-specified settings
+
+Only the following RTC protocol settings are classified as explicitly given
+by Singh & Koundal:
+
+- RTC task.
+- Raw 3D trajectory input.
+- 10-fold cross-validation.
+- Adam optimizer.
+- Initial learning rate: `1e-3`.
+- Batch size: `32`.
+
+Singh & Koundal do not explicitly specify the exact RTC CV pool, empty-row
+handling, Main/Test relationship, or grouped writer/subject/user split.
+
+#### Approved reproduction assumptions
+
+Because the paper does not specify the exact RTC CV pool, the following are
+approved reproduction assumptions and are not paper-specified Singh settings:
+
+- Use RTC Main only as the 10-fold CV pool.
+- Exclude Main `source_index=15227` (class `7`) and
+  `source_index=19086` (class `21`) before fold construction.
+- Preserve the official Test split independently outside CV; do not merge it
+  with Main.
+- Use the resulting `20096` samples as the formal CV pool.
+- Use sample-level 10-fold KFold. This is not writer-independent,
+  subject-independent, or user-independent evaluation because no grouped
+  writer/subject/user metadata is available.
+
+#### Dataset-count record
+
+- Main raw: `20098`
+- Excluded empty trajectories: `2`
+- Usable CV samples: `20096`
+- Test: `5552`
+- Current local official files total: `25650`
+
+The sum `20096 + 5552` is a record of this approved local reproduction
+protocol, not a claim about the actual sample count used by Singh & Koundal.
+
+#### Unresolved issues
+
+- The current local official RTC files total `25650`, whereas public RTC
+  materials report approximately `30000`; the discrepancy remains
+  unresolved.
+- The relationship between the current official release and the original
+  `30000`-sample RTC release remains unresolved.
+- Whether multiple RTC dataset releases or versions exist remains unresolved.
+- Singh & Koundal's exact RTC experiment pool remains unresolved.
+- It remains unresolved whether Singh & Koundal used Main, Test, a merged
+  pool, or another data version.
+
+No explanation is asserted for these unresolved count or release differences.
+
+#### Current RTC reproduction status
+
+- RTC real-data parsing: `VERIFIED`
+- RTC adapter validation: `VERIFIED`
+- TCN real-data forward compatibility: `VERIFIED`
+- RTC numerical reproduction: `NOT STARTED`
+- Formal 10-fold training: `NOT STARTED`
+- Singh reported RTC accuracy reproduction: `NOT YET VERIFIED`
 
 ### 6DMG
 
@@ -168,20 +243,21 @@ selection has not yet been established as an explicit paper-specified fact.
 
 The RTC observations above are validation findings about the verified real
 files and current adapter behavior. They are not additional paper-specified
-training settings. In particular, this phase deliberately stops at real-data
-parsing and forward compatibility; it does not select an RTC experiment pool,
-start formal training, run 10-fold CV, or report a reproduced accuracy.
+training settings. The approved protocol now selects Main-only CV with the
+two empty rows excluded before fold construction and Test preserved
+separately, but formal training, 10-fold CV, and accuracy reproduction remain
+unstarted.
 
 ## Unresolved issues
 
 1. Main contains 2 all-zero empty feature samples, and the current adapter
-   intentionally rejects empty sequences. Future training must explicitly
-   decide and document their handling; no dropping policy is selected here.
+   intentionally rejects empty sequences. The approved protocol excludes
+   them before fold construction as a reproduction assumption; this does not
+   establish that Singh & Koundal used the same handling.
 2. The official files contain 25,650 samples in total, while public
    descriptions may report approximately 30,000. The dataset-release/count
    discrepancy remains unresolved pending authoritative evidence.
 3. Singh & Koundal's exact RTC experiment pool remains unresolved. Main-only,
-   Test-only, merged, and predefined-split usage are not claimed. Future
-   selection must be labeled paper-specified or a reproduction
-   assumption/best-supported choice.
+   Test-only, merged, and other-version usage are not claimed as paper facts;
+   this reproduction's approved Main-only choice is an explicit assumption.
 4. RTD remains `BLOCKED` by official dataset-format ambiguity.
