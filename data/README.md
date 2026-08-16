@@ -1,13 +1,17 @@
-# Local datasets
+# Local Datasets
 
-Real datasets belong only in this repository-root directory:
+This repository uses a shared repository-level `data/` directory for real
+datasets used by multiple model reproductions.
+
+Expected layout:
 
 ```text
 data/
-├── RTD/
-├── RTC/
-├── 6DMG/
-└── mandibular/
-```
-
-All contents other than this guide are ignored by Git. The Phase 5A adapters are provisional and must not be treated as validated until real files are inspected in Phase 5B.
+├─ RTD/
+│  └─ raw/
+├─ RTC/
+│  └─ raw/
+├─ 6DMG/
+│  └─ raw/
+└─ mandibular/
+   └─ raw/

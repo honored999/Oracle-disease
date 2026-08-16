@@ -1,39 +1,117 @@
-# Python artifacts
-__pycache__/
-*.py[cod]
-*.pyo
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
+# ============================================================
+# Real / local datasets
+# ============================================================
 
-# Virtual environments and local configuration
-.venv/
-venv/
-env/
-.env
-
-# IDE and operating-system files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# Data, checkpoints, and generated experiment artifacts
-data/RTD/**
-data/RTC/**
-data/6DMG/**
-data/mandibular/**
+# All real datasets are stored under the repository-level data/
+# directory and must never be committed.
+#
+# Keep only the documentation file tracked.
+data/**
 !data/README.md
-TCN_Singh2024/results/**
-!TCN_Singh2024/results/README.md
+
+
+# ============================================================
+# Local reference papers
+# ============================================================
+
+# Primary-paper PDFs are kept locally for reproduction work.
+# Reference README files remain tracked.
+**/references/*.pdf
+
+
+# ============================================================
+# Model checkpoints and exported models
+# ============================================================
+
 *.pt
 *.pth
 *.ckpt
 *.onnx
-*.npy
-*.npz
 
-# Local reference papers
-**/references/*.pdf
+
+# ============================================================
+# Generated experiment artifacts
+# ============================================================
+
+# Large or temporary generated artifacts should live in these
+# dedicated directories rather than in source-code directories.
+**/checkpoints/**
+**/outputs/**
+**/runs/**
+**/logs/**
+
+# Current TCN experiment outputs.
+# Keep only the documentation file tracked.
+TCN_Singh2024/results/**
+!TCN_Singh2024/results/README.md
+
+
+# ============================================================
+# Python caches / build artifacts
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.coverage
+.coverage.*
+htmlcov/
+
+build/
+dist/
+*.egg-info/
+
+
+# ============================================================
+# Jupyter
+# ============================================================
+
+.ipynb_checkpoints/
+
+
+# ============================================================
+# Python environments / local environment configuration
+# ============================================================
+
+.venv/
+venv/
+env/
+
+.env
+.env.*
+!.env.example
+
+
+# ============================================================
+# IDE / editor
+# ============================================================
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+*~
+
+
+# ============================================================
+# Operating system
+# ============================================================
+
+Thumbs.db
+desktop.ini
+.DS_Store
+
+
+# ============================================================
+# Temporary files
+# ============================================================
+
+*.tmp
+*.temp
+*.bak
