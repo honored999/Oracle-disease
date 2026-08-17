@@ -1,0 +1,52 @@
+dataset: RTC
+
+data:
+  root: data/RTC/raw
+  main_features_file: features
+  main_labels_file: labels
+  test_features_file: featuresTest
+  test_labels_file: labelsTest
+
+main:
+  raw_samples: 20098
+  excluded_source_indices: [15227, 19086]
+  expected_cv_samples: 20096
+
+test:
+  expected_samples: 5552
+  held_out: true
+  include_in_cv: false
+
+model:
+  input_channels: 3
+  num_classes: 26
+  hidden_channels: [32, 32, 32]
+  kernel_size: 3
+  dilations: [1, 2, 4]
+  dropout: 0.2
+
+training:
+  epochs: 20
+  optimizer: Adam
+  learning_rate: 0.001
+  batch_size: 32
+  seed: 42
+  fold_seed_policy: base_seed_plus_fold
+  shuffle_train: true
+  num_workers: 0
+  drop_last: false
+
+evaluation:
+  folds: 10
+  split_type: sample_level_kfold
+
+loss: CrossEntropyLoss
+scheduler: none
+weight_decay: 0
+
+checkpoint_policy:
+  save_checkpoints: false
+
+preprocessing:
+  root_translation: paper_literal
+  minmax: per_sample_per_channel
