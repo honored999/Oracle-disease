@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +15,16 @@ from TCN_Singh2024.src import rtc_runner
 
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "configs" / "rtc_reproduction.yaml"
+
+
+@pytest.fixture
+def fake_generated_root(monkeypatch, tmp_path):
+    fake_runner = tmp_path / "fake_repo" / "TCN_Singh2024" / "src" / "rtc_runner.py"
+    fake_runner.parent.mkdir(parents=True)
+    generated_root = fake_runner.parents[1] / "results" / "generated"
+    generated_root.mkdir(parents=True)
+    monkeypatch.setattr(rtc_runner, "__file__", str(fake_runner))
+    return generated_root
 
 
 def _locked_config() -> dict[str, object]:
@@ -180,7 +191,252 @@ class _TinyDataset(Dataset):
         return {"sequence": torch.ones(1, 3), "label": index % 2}
 
 
-def test_runner_delegates_to_existing_cv_entry_point_without_using_test_data(monkeypatch, tmp_path):
+class _FormalPreflightDataset(Dataset):
+    """Small-item synthetic dataset retaining the locked Main source IDs."""
+
+    def __init__(self, source_indices: tuple[int, ...]) -> None:
+        self.source_indices = source_indices
+
+    def __len__(self) -> int:
+        return len(self.source_indices)
+
+    def __getitem__(self, index: int) -> dict[str, object]:
+        return {
+            "sequence": torch.ones(2, 3),
+            "label": self.source_indices[index] % 26,
+        }
+
+
+class _PreflightTinyModel(nn.Module):
+    """Parameter-bearing model whose .to() never requires a real accelerator."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        del args, kwargs
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(1))
+
+    def to(self, device):
+        del device
+        return self
+
+
+def _formal_preflight_protocol() -> rtc_runner.RtcProtocolData:
+    source_indices = tuple(
+        index for index in range(20098) if index not in {15227, 19086}
+    )
+    return rtc_runner.RtcProtocolData(
+        dataset=_FormalPreflightDataset(source_indices),
+        source_indices=source_indices,
+        labels=tuple(index % 26 for index in source_indices),
+        folds=rtc_runner.plan_rtc_folds(source_indices, folds=10, seed=42),
+        test_sample_count=5552,
+        test_used=False,
+    )
+
+
+def _patch_preflight_dependencies(monkeypatch, protocol, seen):
+    monkeypatch.setattr(rtc_runner, "prepare_rtc_protocol", lambda *args, **kwargs: protocol)
+    monkeypatch.setattr(rtc_runner, "TCNClassifier", _PreflightTinyModel)
+    monkeypatch.setattr(rtc_runner, "set_seed", lambda seed: seen.setdefault("seeds", []).append(seed))
+
+    def fake_train(model, loader, optimizer, criterion, device):
+        del model, optimizer, criterion, device
+        subset = loader.dataset
+        seen["train_indices"] = tuple(subset.indices)
+        seen["train_source_indices"] = tuple(
+            subset.dataset.source_indices[index] for index in subset.indices
+        )
+        seen["train_batch_size"] = loader.batch_size
+        seen["train_calls"] = seen.get("train_calls", 0) + 1
+        return {"loss": 0.75, "accuracy": 0.25}
+
+    def fake_evaluate(model, loader, criterion, device, num_classes):
+        del model, criterion, device, num_classes
+        subset = loader.dataset
+        seen["validation_indices"] = tuple(subset.indices)
+        seen["validation_source_indices"] = tuple(
+            subset.dataset.source_indices[index] for index in subset.indices
+        )
+        seen["validation_calls"] = seen.get("validation_calls", 0) + 1
+        return {"loss": 0.5, "accuracy": 0.5}
+
+    monkeypatch.setattr(rtc_runner, "train_one_epoch", fake_train)
+    monkeypatch.setattr(rtc_runner, "evaluate", fake_evaluate)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--preflight", "--run-cv"],
+        ["--preflight", "--manifest-only"],
+    ],
+)
+def test_preflight_cli_is_distinct_and_mutually_exclusive(argv):
+    with pytest.raises(SystemExit) as caught:
+        rtc_runner.main(argv)
+
+    assert caught.value.code == 2
+
+
+def test_preflight_locks_formal_fold_zero_one_epoch_and_observation_artifacts(
+    monkeypatch, fake_generated_root
+):
+    protocol = _formal_preflight_protocol()
+    plan = protocol.folds[0]
+    seen: dict[str, object] = {}
+    _patch_preflight_dependencies(monkeypatch, protocol, seen)
+
+    def fake_plot(observer, fold):
+        seen["plot_calls"] = seen.get("plot_calls", 0) + 1
+        path = observer.output_dir / f"fold_{fold}" / "training_curves.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"synthetic observation curve")
+
+    monkeypatch.setattr(
+        rtc_runner.RtcTrainingObserver,
+        "_plot_training_curves",
+        fake_plot,
+    )
+
+    output_dir = fake_generated_root / "rtc_preflight"
+    result = rtc_runner.run_rtc_preflight(
+        _locked_config(),
+        output_dir=output_dir,
+        device="cpu",
+    )
+
+    assert result["status"] == "preflight_complete"
+    assert result["mode"] == "preflight"
+    assert result["formal_result"] is False
+    assert result["fold_id"] == 0
+    assert result["epochs"] == 1
+    assert seen["seeds"] == [42]
+    assert seen["train_calls"] == seen["validation_calls"] == 1
+    assert seen["train_indices"] == plan.train_indices
+    assert seen["validation_indices"] == plan.validation_indices
+    assert seen["train_source_indices"] == plan.train_source_indices
+    assert seen["validation_source_indices"] == plan.validation_source_indices
+    assert seen["train_batch_size"] == 32
+
+    test_source_indices = set(range(20098, 25650))
+    assert test_source_indices.isdisjoint(seen["train_source_indices"])
+    assert test_source_indices.isdisjoint(seen["validation_source_indices"])
+
+    preflight_manifest = json.loads(
+        (output_dir / "preflight_manifest.json").read_text(encoding="utf-8")
+    )
+    assert preflight_manifest["mode"] == "preflight"
+    assert preflight_manifest["formal_result"] is False
+    assert preflight_manifest["completion_status"] == "preflight_complete"
+    assert preflight_manifest["fold_id"] == 0
+    assert preflight_manifest["epochs"] == 1
+    assert preflight_manifest["folds"] == 10
+    assert preflight_manifest["main_raw_samples"] == 20098
+    assert preflight_manifest["excluded_source_indices"] == [15227, 19086]
+    assert preflight_manifest["usable_cv_samples"] == 20096
+    assert preflight_manifest["test_samples"] == 5552
+    assert preflight_manifest["test_used_in_cv"] is False
+    assert preflight_manifest["seed"] == 42
+    assert preflight_manifest["fold_seed"] == 42
+    assert preflight_manifest["train_indices"] == list(plan.train_indices)
+    assert preflight_manifest["validation_indices"] == list(plan.validation_indices)
+    assert preflight_manifest["train_source_indices"] == list(plan.train_source_indices)
+    assert preflight_manifest["validation_source_indices"] == list(plan.validation_source_indices)
+    assert preflight_manifest["start_time_utc"]
+    assert preflight_manifest["end_time_utc"]
+    assert preflight_manifest["artifacts"] == [
+        "run_manifest.json",
+        "fold_0/metrics.json",
+        "fold_0/training_curves.png",
+        "preflight_manifest.json",
+    ]
+
+    run_manifest = json.loads(
+        (output_dir / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert run_manifest["status"] == "preflight_complete"
+    assert run_manifest["eligible_for_aggregation"] is False
+    assert run_manifest["completed_folds"] == [0]
+    metrics = json.loads(
+        (output_dir / "fold_0" / "metrics.json").read_text(encoding="utf-8")
+    )
+    assert metrics["epochs"] == metrics["epochs_requested"] == 1
+    assert metrics["epochs_completed"] == 1
+    assert metrics["final_epoch"] == 1
+    assert len(metrics["epoch_history"]) == 1
+    assert metrics["validation"]["accuracy"] == pytest.approx(0.5)
+    assert metrics["train_source_indices"] == list(plan.train_source_indices)
+    assert metrics["validation_source_indices"] == list(plan.validation_source_indices)
+    assert (output_dir / "fold_0" / "training_curves.png").is_file()
+    assert not (output_dir / "summary.json").exists()
+    assert not (output_dir / "fold_accuracy.png").exists()
+    assert seen["plot_calls"] == 1
+
+
+def test_preflight_telemetry_failure_is_nonfatal(monkeypatch, fake_generated_root):
+    protocol = _formal_preflight_protocol()
+    seen: dict[str, object] = {}
+    _patch_preflight_dependencies(monkeypatch, protocol, seen)
+    monkeypatch.setattr(rtc_runner, "_resolve_training_device", lambda requested: torch.device("cuda"))
+    monkeypatch.setattr(rtc_runner.torch.cuda, "is_available", lambda: True)
+
+    def telemetry_failure(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("synthetic telemetry failure")
+
+    monkeypatch.setattr(rtc_runner.torch.cuda, "get_device_name", telemetry_failure)
+    result = rtc_runner.run_rtc_preflight(
+        _locked_config(),
+        output_dir=fake_generated_root / "telemetry-preflight",
+        device="cuda",
+    )
+
+    assert result["status"] == "preflight_complete"
+    manifest = json.loads(
+        (fake_generated_root / "telemetry-preflight" / "preflight_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["cuda_available"] is True
+    assert manifest["cuda_device_name"] is None
+
+
+def test_preflight_training_error_propagates_and_marks_aborted(monkeypatch, fake_generated_root):
+    protocol = _formal_preflight_protocol()
+    seen: dict[str, object] = {}
+    _patch_preflight_dependencies(monkeypatch, protocol, seen)
+
+    def raise_training_error(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("sentinel preflight training error")
+
+    monkeypatch.setattr(rtc_runner, "train_one_epoch", raise_training_error)
+    output_dir = fake_generated_root / "aborted-preflight"
+    with pytest.raises(RuntimeError, match="sentinel preflight training error"):
+        rtc_runner.run_rtc_preflight(
+            _locked_config(),
+            output_dir=output_dir,
+            device="cpu",
+        )
+
+    preflight_manifest = json.loads(
+        (output_dir / "preflight_manifest.json").read_text(encoding="utf-8")
+    )
+    run_manifest = json.loads(
+        (output_dir / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert preflight_manifest["completion_status"] == "aborted"
+    assert preflight_manifest["formal_result"] is False
+    assert preflight_manifest["error_type"] == "RuntimeError"
+    assert "sentinel preflight training error" in preflight_manifest["error"]
+    assert run_manifest["status"] == "aborted"
+    assert run_manifest["eligible_for_aggregation"] is False
+    assert seen.get("train_calls", 0) == 0
+
+
+def test_runner_delegates_to_existing_cv_entry_point_without_using_test_data(
+    monkeypatch, fake_generated_root
+):
     dataset = _TinyDataset()
     protocol = SimpleNamespace(dataset=dataset)
     calls: dict[str, object] = {}
@@ -191,7 +447,7 @@ def test_runner_delegates_to_existing_cv_entry_point_without_using_test_data(mon
 
     def fake_manifest(protocol_value, config, output_dir):
         calls["manifest_protocol"] = protocol_value
-        return tmp_path / "protocol_manifest.json"
+        return fake_generated_root / "protocol_manifest.json"
 
     def fake_cv(**kwargs):
         calls["cv_kwargs"] = kwargs
@@ -206,7 +462,7 @@ def test_runner_delegates_to_existing_cv_entry_point_without_using_test_data(mon
 
     result = rtc_runner.run_rtc_cross_validation(
         _locked_config(),
-        output_dir=tmp_path,
+        output_dir=fake_generated_root / "rtc_baseline",
     )
 
     kwargs = calls["cv_kwargs"]

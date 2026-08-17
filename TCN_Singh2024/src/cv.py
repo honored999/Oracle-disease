@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import random
+import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import torch
 from torch import nn
@@ -54,6 +56,7 @@ def run_cross_validation(
     num_workers: int = 0,
     drop_last: bool = False,
     shuffle_splits: bool = True,
+    observer: Any | None = None,
 ) -> dict[str, object]:
     """Train independent models per sample-level fold and persist only metrics JSON."""
     if epochs < 1:
@@ -68,24 +71,55 @@ def run_cross_validation(
         criterion = nn.CrossEntropyLoss()
         train_loader = DataLoader(Subset(dataset, train_indices), batch_size=batch_size, shuffle=shuffle_train, drop_last=drop_last, num_workers=num_workers, collate_fn=collate_trajectory_batch)
         validation_loader = DataLoader(Subset(dataset, validation_indices), batch_size=batch_size, shuffle=False, num_workers=num_workers, collate_fn=collate_trajectory_batch)
+        if observer is not None:
+            observer.on_fold_start(fold, seed + fold, len(train_indices), len(validation_indices))
         train_metrics: dict[str, float] = {}
-        for _ in range(epochs):
+        validation_metrics: dict[str, object] | None = None
+        epoch_history: list[dict[str, object]] = []
+        for epoch in range(epochs):
+            epoch_started = time.perf_counter()
             train_metrics = train_one_epoch(model, train_loader, optimizer, criterion, device)
-        validation_metrics = evaluate(model, validation_loader, criterion, device, num_classes)
+            if observer is not None:
+                validation_metrics = evaluate(model, validation_loader, criterion, device, num_classes)
+                observer.on_epoch_end(
+                    fold,
+                    epoch + 1,
+                    train_metrics,
+                    validation_metrics,
+                    time.perf_counter() - epoch_started,
+                )
+                epoch_history.append(
+                    {
+                        "epoch": epoch + 1,
+                        "train_loss": float(train_metrics["loss"]),
+                        "train_accuracy": float(train_metrics["accuracy"]),
+                        "validation_loss": float(validation_metrics["loss"]),
+                        "validation_accuracy": float(validation_metrics["accuracy"]),
+                    }
+                )
+        if validation_metrics is None:
+            validation_metrics = evaluate(model, validation_loader, criterion, device, num_classes)
         fold_accuracies.append(float(validation_metrics["accuracy"]))
-        _write_json(output_path / f"fold_{fold}" / "metrics.json", {
+        fold_payload: dict[str, object] = {
             "schema_version": 1,
             "fold": fold,
             "split_type": "sample_level_kfold",
             "seed": seed + fold,
             "num_classes": num_classes,
             "epochs": epochs,
+            "epochs_requested": epochs,
+            "epochs_completed": epochs,
             "train_size": len(train_indices),
             "validation_size": len(validation_indices),
             "validation_indices": validation_indices,
             "train": train_metrics,
             "validation": validation_metrics,
-        })
+        }
+        if observer is not None:
+            fold_payload["epoch_history"] = epoch_history
+        _write_json(output_path / f"fold_{fold}" / "metrics.json", fold_payload)
+        if observer is not None:
+            observer.on_fold_complete(fold, validation_metrics)
     accuracy_tensor = torch.tensor(fold_accuracies, dtype=torch.float32)
     summary: dict[str, object] = {
         "schema_version": 1,
@@ -108,5 +142,6 @@ def run_cross_validation(
             "drop_last": drop_last,
         },
     }
-    _write_json(output_path / "summary.json", summary)
+    if observer is None:
+        _write_json(output_path / "summary.json", summary)
     return summary
